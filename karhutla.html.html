@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pantauan Kebakaran Indonesia - Satelit</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
+<style>
+:root{--bg:#17110e;--card:#241b17;--tx:#f5ebe4;--mut:#b5a499;--bd:#3a2d26;--hi:#ef4444;--md:#f59e0b;--lo:#22c55e}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
+#gate{position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:radial-gradient(circle at 50% 30%,#5a1d0c,#17110e 70%);padding:20px}
+.box{background:var(--card);border:1px solid var(--bd);border-radius:18px;padding:28px;width:100%;max-width:360px;text-align:center}
+.box h2{margin:8px 0 4px}.box p{color:var(--mut);font-size:.85rem;margin:0 0 16px}
+input{width:100%;padding:12px;border-radius:10px;border:1px solid var(--bd);background:var(--bg);color:var(--tx);font-size:1rem;text-align:center;letter-spacing:2px;text-transform:uppercase}
+button{background:var(--hi);color:#fff;border:0;border-radius:10px;padding:11px 16px;font-weight:600;cursor:pointer;width:100%;margin-top:10px}
+#err{color:var(--hi);font-size:.8rem;min-height:18px;margin-top:8px}
+@keyframes sh{25%{transform:translateX(-8px)}75%{transform:translateX(8px)}}.shake{animation:sh .3s}
+#app{display:none;padding:16px;max-width:1000px;margin:auto}
+h1{font-size:1.3rem;margin:0}.sub{color:var(--mut);font-size:.82rem;margin:4px 0 14px}
+.top{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}.top button{width:auto;margin:0}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:14px;margin-bottom:14px}
+.kpi{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:14px}
+.kpi div{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:10px}
+.kpi b{display:block;font-size:1.4rem}.kpi span{font-size:.75rem;color:var(--mut)}
+#map{height:430px;border-radius:10px;z-index:1}
+.g{display:grid;grid-template-columns:1fr 1fr;gap:14px}@media(max-width:700px){.g{grid-template-columns:1fr}}
+.bar{display:flex;align-items:center;gap:8px;font-size:.8rem;margin:5px 0;cursor:pointer}
+.bar i{flex:0 0 110px;font-style:normal}.bar .t{flex:1;background:var(--bd);border-radius:6px;height:14px;overflow:hidden}
+.bar .f{height:100%;border-radius:6px;transition:width .6s}.bar em{flex:0 0 40px;text-align:right;font-style:normal}
+.donut{width:150px;height:150px;border-radius:50%;margin:14px auto 0;position:relative}
+.donut::after{content:"";position:absolute;inset:32px;background:var(--card);border-radius:50%}
+.lg{display:flex;gap:12px;justify-content:center;font-size:.8rem;margin-top:10px;flex-wrap:wrap}
+.lg s{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:4px}
+#info{font-size:.9rem;margin-top:10px;min-height:22px}.note{font-size:.72rem;color:var(--mut)}
+</style>
+</head>
+<body>
+
+<div id="gate"><div class="box" id="bx">
+<div style="font-size:2.4rem">Hanya Pemilik</div>
+<h2>Pantauan Karhutla</h2><p>Masukkan namamu untuk melanjutkan</p>
+<input id="nm" placeholder="Nama" autocomplete="off" onkeydown="if(event.key==='Enter')enter()">
+<div id="err"></div>
+<button onclick="enter()">Masuk</button>
+</div></div>
+
+<div id="app">
+<div class="top"><div><h1>Pantauan Kebakaran Hutan &amp; Lahan Indonesia</h1>
+<p class="sub" id="ts"></p></div><button onclick="scan()">Deteksi ulang</button></div>
+<div class="kpi">
+<div><b id="k1">-</b><span>Titik panas terdeteksi</span></div>
+<div><b id="k2">-</b><span>Rata-rata risiko nasional</span></div>
+<div><b id="k3" style="color:var(--hi)">-</b><span>Wilayah risiko tinggi</span></div>
+<div><b id="k4">-</b><span>Wilayah paling rawan</span></div>
+</div>
+<div class="card"><div id="map"></div><div id="info">Klik titik di peta untuk melihat detail wilayah.</div>
+<div class="lg"><span><s style="background:var(--hi)"></s>Tinggi (≥70%)</span><span><s style="background:var(--md)"></s>Sedang (40–69%)</span><span><s style="background:var(--lo)"></s>Rendah (&lt;40%)</span></div></div>
+<div class="g">
+<div class="card"><b>Persentase risiko per wilayah</b><div id="bars" style="margin-top:8px"></div></div>
+<div class="card"><b>Distribusi tingkat risiko</b><div class="donut" id="donut"></div><div class="lg" id="dl"></div></div>
+</div>
+<p class="note">⚠️ Data titik panas adalah <b>simulasi</b>. Untuk data nyata, isi fungsi <code>scan()</code> dengan fetch ke NASA FIRMS API atau SiPongi KLHK.</p>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<script>
+const NAMA="KHEISA",$=id=>document.getElementById(id);
+function open_(){ $('gate').style.display='none'; $('app').style.display='block'; init(); }
+function enter(){
+  if($('nm').value.trim().toUpperCase()===NAMA){ try{sessionStorage.setItem('ok','1')}catch(e){} open_(); }
+  else{ $('err').textContent='Nama tidak dikenali. Coba lagi ya.'; const b=$('bx'); b.classList.remove('shake'); void b.offsetWidth; b.classList.add('shake'); }
+}
+try{ if(sessionStorage.getItem('ok')==='1') window.addEventListener('load',open_); }catch(e){}
+
+const REG=[["Aceh",96.5,4.2,25],["Riau",101.5,0.5,75],["Jambi",102.5,-1.5,65],["Sumatera Selatan",104,-3,80],["Kalimantan Barat",110.5,-0.3,70],["Kalimantan Tengah",113.5,-1.8,85],["Kalimantan Selatan",115.5,-3,55],["Kalimantan Timur",116.5,1,45],["Sulawesi Selatan",120,-3.5,30],["Papua Selatan",139,-6.5,60],["NTT",121,-9,50],["Jawa Timur",112.5,-7.8,35]];
+const colv=v=>v>=70?'#ef4444':v>=40?'#f59e0b':'#22c55e',col=v=>v>=70?'var(--hi)':v>=40?'var(--md)':'var(--lo)',lvl=v=>v>=70?'Tinggi':v>=40?'Sedang':'Rendah';
+let map,layer,data=[],started=false;
+function init(){
+  if(started) return; started=true;
+  map=L.map('map',{center:[-2.5,118],zoom:5,minZoom:4});
+  if(typeof L==='undefined'){ $('info').innerHTML='⚠️ Leaflet gagal dimuat. Cek koneksi internet, lalu buka file ini langsung di browser (bukan di preview).'; return; }
+  const esri=L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{attribution:'Tiles © Esri',maxZoom:17});
+  const clarity=L.tileLayer('https://clarity.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{attribution:'Tiles © Esri',maxZoom:17});
+  const gsat=L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',{attribution:'© Google',maxZoom:19});
+  const osm=L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap',maxZoom:19});
+  const labels=L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',{maxZoom:17});
+  esri.addTo(map); labels.addTo(map);
+  L.control.layers({'Satelit Esri':esri,'Satelit Esri Clarity':clarity,'Satelit Google':gsat,'Peta jalan (OSM)':osm},{'Label wilayah':labels}).addTo(map);
+  let errs=0;
+  [esri,clarity,gsat,osm].forEach(t=>t.on('tileerror',()=>{ if(++errs===6) $('info').innerHTML='⚠️ Tile peta gagal dimuat. Coba ganti sumber peta lewat ikon layer di pojok kanan atas peta, cek internet, atau buka file langsung di browser (bukan di preview).'; }));
+  layer=L.layerGroup().addTo(map);
+  scan();
+}
+function scan(){
+  // Ganti dengan fetch ke NASA FIRMS / SiPongi untuk data nyata
+  data=REG.map(r=>{const v=Math.max(3,Math.min(98,Math.round(r[3]+(Math.random()-.5)*30)));return{n:r[0],x:r[1],y:r[2],v,h:Math.round(v*1.6+Math.random()*20)}});
+  render();
+}
+function render(){
+  layer.clearLayers();
+  data.forEach((d,i)=>{
+    if(d.v>=70) L.circle([d.y,d.x],{radius:90000,color:colv(d.v),weight:1,fillOpacity:.15}).addTo(layer);
+    L.circleMarker([d.y,d.x],{radius:7+d.v/10,color:'#fff',weight:2,fillColor:colv(d.v),fillOpacity:.9})
+      .bindTooltip(`${d.n}: ${d.v}%`).on('click',()=>show(i)).addTo(layer);
+  });
+  const s=[...data].sort((a,b)=>b.v-a.v),tot=data.reduce((a,d)=>a+d.h,0),avg=Math.round(data.reduce((a,d)=>a+d.v,0)/data.length);
+  const c={Tinggi:0,Sedang:0,Rendah:0};data.forEach(d=>c[lvl(d.v)]++);
+  $('k1').textContent=tot;$('k2').textContent=avg+'%';$('k3').textContent=c.Tinggi;$('k4').textContent=s[0].n;
+  $('bars').innerHTML=s.map(d=>`<div class="bar" onclick="show(${data.indexOf(d)})"><i>${d.n}</i><div class="t"><div class="f" style="width:${d.v}%;background:${col(d.v)}"></div></div><em>${d.v}%</em></div>`).join('');
+  const n=data.length,a=c.Tinggi/n*100,b=a+c.Sedang/n*100;
+  $('donut').style.background=`conic-gradient(var(--hi) 0 ${a}%,var(--md) ${a}% ${b}%,var(--lo) ${b}% 100%)`;
+  $('dl').innerHTML=Object.entries(c).map(([k,v])=>`<span><s style="background:${col(k=='Tinggi'?80:k=='Sedang'?50:10)}"></s>${k}: ${v} (${Math.round(v/n*100)}%)</span>`).join('');
+  $('ts').textContent='Halo, '+NAMA+'! • Pembaruan: '+new Date().toLocaleString('id-ID')+' • Data simulasi';
+}
+function show(i){const d=data[i];map.flyTo([d.y,d.x],7,{duration:1});$('info').innerHTML=`<b>${d.n}</b> — risiko <b style="color:${col(d.v)}">${d.v}% (${lvl(d.v)})</b> • ${d.h} titik panas • koordinat ${d.y.toFixed(1)}, ${d.x.toFixed(1)}`}
+</script>
+</body>
+</html>
